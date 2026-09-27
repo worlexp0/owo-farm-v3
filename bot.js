@@ -1,5 +1,5 @@
 // ===================================================================
-// OWO FARM BOTU — Ana Discord botu + self-bot yöneticisi
+// OWO FARM BOTU — Ana bot + self-bot + otomatik equip
 // ===================================================================
 const {
   Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder
@@ -26,7 +26,7 @@ const CF_MAX_BAHIS   = parseInt(process.env.CF_MAX_BAHIS   || '100', 10);
 const CF_INTERVAL    = parseInt(process.env.CF_INTERVAL    || '300000', 10);
 
 // -------------------------------------------------------------------
-// HATA YAKALAYICI — EN BAŞTA OLMALI
+// HATA YAKALAYICI
 // -------------------------------------------------------------------
 process.on('unhandledRejection', (e) => {
   console.log('=== UNHANDLED REJECTION ===');
@@ -43,12 +43,16 @@ console.log('=== BAŞLATILIYOR ===');
 console.log('ANA_BOT_TOKEN:', ANA_TOKEN ? (ANA_TOKEN.slice(0, 10) + '...') : 'YOK');
 console.log('CLIENT_ID:', CLIENT_ID || 'YOK');
 console.log('GUILD_ID:', GUILD_ID || 'YOK');
-console.log('OWO_BOT_ID:', OWO_BOT_ID);
 
 // -------------------------------------------------------------------
 // SABİTLER
 // -------------------------------------------------------------------
 const NADIRLIK = {
+  'common': 1, 'uncommon': 2, 'rare': 3, 'epic': 4,
+  'mythic': 5, 'legendary': 6, 'fabled': 7, 'hidden': 8
+};
+
+const SILAH_NADIRLIK = {
   'common': 1, 'uncommon': 2, 'rare': 3, 'epic': 4,
   'mythic': 5, 'legendary': 6, 'fabled': 7, 'hidden': 8
 };
@@ -89,7 +93,8 @@ async function selfBotBaslat(token, kanalId, ownerId) {
     cfSon: 0, cfSeri: 0, cfMola: 0,
     kazanc: 0, kayip: 0,
     hayvanlar: [], enIyiTakim: [], takimKuruldu: false,
-    sonHunt: 0, sonBattle: 0, sonCrate: 0, sonZoo: 0,
+    silahlar: [], equipEdildi: false,
+    sonHunt: 0, sonBattle: 0, sonCrate: 0, sonZoo: 0, sonInv: 0, sonEquip: 0,
   };
   hesaplar.set(token, kayit);
 
@@ -107,6 +112,7 @@ async function selfBotBaslat(token, kanalId, ownerId) {
     }
     console.log(`[SELF] ${kayit.user} → #${kanal.name}`);
 
+    // Başlangıç keşfi
     await sleep(3000);
     try { await kanal.send('owo zoo'); } catch (e) {}
     await sleep(2500);
@@ -123,7 +129,7 @@ async function selfBotBaslat(token, kanalId, ownerId) {
     const kucuk = icerik.toLowerCase();
     const now = Date.now();
 
-    // Otomatik buton tıklama
+    // -------- Otomatik buton tıklama --------
     try {
       if (message.components && message.components.length > 0) {
         for (const row of message.components) {
@@ -143,9 +149,9 @@ async function selfBotBaslat(token, kanalId, ownerId) {
       }
     } catch (e) { console.log(`[BUTON HATA] ${e.message}`); }
 
-    console.log(`[OWO/${kayit.user}] ${icerik.slice(0, 180).replace(/\n/g, ' ')}`);
+    console.log(`[OWO/${kayit.user}] ${icerik.slice(0, 200).replace(/\n/g, ' ')}`);
 
-    // Captcha
+    // -------- Captcha --------
     if ((kucuk.includes('captcha') || kucuk.includes('human check')) &&
         (!message.components || message.components.length === 0)) {
       kayit.durdu = true; kayit.durum = 'captcha!';
@@ -153,14 +159,14 @@ async function selfBotBaslat(token, kanalId, ownerId) {
       return;
     }
 
-    // Ban
+    // -------- Ban --------
     if (kucuk.includes('you have been banned') || kucuk.includes('banned from owo')) {
       kayit.durdu = true; kayit.durum = 'banlı';
       console.log(`[🚫 BAN/${kayit.user}]`);
       return;
     }
 
-    // Mute
+    // -------- Mute --------
     if (kucuk.includes('muted') && !kucuk.includes('unmuted')) {
       const m = kucuk.match(/muted for (\d+)\s*(minute|second|hour|min|sec)/);
       if (m) {
@@ -179,14 +185,14 @@ async function selfBotBaslat(token, kanalId, ownerId) {
       kayit.muteUntil = now + 5000;
     }
 
-    // Bakiye
+    // -------- Bakiye --------
     const cashM = icerik.match(/you currently have \*{0,2}([\d,]+)\*{0,2} cowoncy/i);
     if (cashM) {
       kayit.bakiye = parseInt(cashM[1].replace(/,/g, ''), 10);
       console.log(`[💰 ${kayit.user}] ${kayit.bakiye}`);
     }
 
-    // CF kazanç
+    // -------- CF kazanç --------
     const wonM = icerik.match(/you won \*{0,2}([\d,]+)\*{0,2} cowoncy/i);
     if (wonM) {
       const k = parseInt(wonM[1].replace(/,/g, ''), 10);
@@ -194,7 +200,7 @@ async function selfBotBaslat(token, kanalId, ownerId) {
       console.log(`[🟢 CF+/${kayit.user}] +${k}`);
     }
 
-    // CF kayıp
+    // -------- CF kayıp --------
     const lostM = icerik.match(/you lost \*{0,2}([\d,]+)\*{0,2} cowoncy/i);
     if (lostM) {
       const k = parseInt(lostM[1].replace(/,/g, ''), 10);
@@ -206,7 +212,7 @@ async function selfBotBaslat(token, kanalId, ownerId) {
       }
     }
 
-    // Satış
+    // -------- Satış --------
     const sellM = icerik.match(/sold \*{0,2}(\d+)\*{0,2} animals? for \*{0,2}([\d,]+)\*{0,2}/i);
     if (sellM) {
       const t = parseInt(sellM[2].replace(/,/g, ''), 10);
@@ -214,23 +220,55 @@ async function selfBotBaslat(token, kanalId, ownerId) {
       console.log(`[💵 ${kayit.user}] ${sellM[1]} hayvan satıldı +${t}`);
     }
 
-    // Zoo parse
+    // -------- Zoo parse --------
+    // OwO zoo formatı: "• dog (Common) | lvl 5"
     const hRegex = /[•\-]\s*([a-zA-Zçğıöşü\s]+?)\s*\((\w+)\)/g;
     let mm;
-    const yeniler = [];
+    const yeniHayvanlar = [];
     while ((mm = hRegex.exec(icerik)) !== null) {
       const isim = mm[1].trim();
       const nad = mm[2].toLowerCase();
-      if (NADIRLIK[nad]) yeniler.push({ isim, nadirlik: nad });
+      if (NADIRLIK[nad] && isim.length > 1 && isim.length < 30) {
+        yeniHayvanlar.push({ isim, nadirlik: nad });
+      }
     }
-    if (yeniler.length > 0) {
-      for (const y of yeniler) {
+    if (yeniHayvanlar.length > 0) {
+      for (const y of yeniHayvanlar) {
         if (!kayit.hayvanlar.find(h => h.isim.toLowerCase() === y.isim.toLowerCase()))
           kayit.hayvanlar.push(y);
       }
       kayit.enIyiTakim = kayit.hayvanlar.slice()
         .sort((a, b) => NADIRLIK[b.nadirlik] - NADIRLIK[a.nadirlik]).slice(0, 3);
-      console.log(`[🦊 ${kayit.user}] ${kayit.hayvanlar.length} hayvan, takım: ${kayit.enIyiTakim.map(h=>h.isim).join(', ')}`);
+      console.log(`[🦊 ${kayit.user}] ${kayit.hayvanlar.length} hayvan | takım: ${kayit.enIyiTakim.map(h=>h.isim+'('+h.nadirlik+')').join(', ')}`);
+    }
+
+    // -------- Silah parse (owo inv cevabından) --------
+    // OwO inv formatı: "• 1234567 - Rusty Sword (Common)"
+    const sRegex = /[•\-]\s*(\d{5,})\s*[-–]\s*([^(\n]+?)\s*\((\w+)\)/g;
+    let sm;
+    let yeniSilah = 0;
+    while ((sm = sRegex.exec(icerik)) !== null) {
+      const id = sm[1].trim();
+      const isim = sm[2].trim();
+      const nad = (sm[3] || 'common').toLowerCase();
+      if (!kayit.silahilar.find(s => s.id === id)) {
+        kayit.silahilar.push({ id, isim, nadirlik: nad });
+        yeniSilah++;
+      }
+    }
+    if (yeniSilah > 0) {
+      console.log(`[🔫 ${kayit.user}] ${yeniSilah} silah eklendi (toplam ${kayit.silahilar.length})`);
+      // En iyi silahı seç (nadirlik + en yüksek id = yeni olan)
+      kayit.silahilar.sort((a, b) => {
+        const na = SILAH_NADIRLIK[a.nadirlik] || 0;
+        const nb = SILAH_NADIRLIK[b.nadirlik] || 0;
+        if (nb !== na) return nb - na;
+        return parseInt(b.id) - parseInt(a.id);
+      });
+      const enIyi = kayit.silahilar[0];
+      console.log(`[🏆 ${kayit.user}] En iyi silah: ${enIyi.isim} (${enIyi.nadirlik}) - ID ${enIyi.id}`);
+      // Equip bayrağını sıfırla, döngüde tekrar equip etsin
+      kayit.equipEdildi = false;
     }
   });
 
@@ -251,12 +289,12 @@ async function kasDongusu(client, kanal, kayit) {
 
     let gonder = null;
 
-    // Takım kur
+    // 1) Takım kur (en iyi 3 hayvan)
     if (!kayit.takimKuruldu && kayit.enIyiTakim.length >= 3) {
       for (const h of kayit.enIyiTakim) {
         try {
           await kanal.send(`owo team add ${h.isim}`);
-          console.log(`[${kayit.user}] → owo team add ${h.isim}`);
+          console.log(`[${kayit.user}] → owo team add ${h.isim} (${h.nadirlik})`);
         } catch (e) { console.log(`[TAKIM HATA] ${e.message}`); }
         await sleep(2500);
       }
@@ -265,24 +303,45 @@ async function kasDongusu(client, kanal, kayit) {
       continue;
     }
 
-    // Özel komutlar
+    // 2) En iyi silahı kuşandır
+    if (!kayit.equipEdildi && kayit.silahilar.length > 0) {
+      const enIyi = kayit.silahilar[0];
+      try {
+        await kanal.send(`owo equip ${enIyi.id}`);
+        console.log(`[${kayit.user}] → owo equip ${enIyi.id} (${enIyi.isim})`);
+      } catch (e) { console.log(`[EQUIP HATA] ${e.message}`); }
+      kayit.equipEdildi = true;
+      kayit.sonEquip = now;
+      await sleep(2500);
+      continue;
+    }
+
+    // 3) Özel komutlar (daily, cookie, sell, cash...)
     for (const k of kayit.ozel) {
       if (now - k.son >= k.interval) { gonder = k.cmd; k.son = now; break; }
     }
 
-    // Zoo yenile
+    // 4) Envanter yenile (30 dk)
+    if (!gonder && now - kayit.sonInv > 30 * 60 * 1000) {
+      gonder = 'owo inv'; kayit.sonInv = now;
+    }
+
+    // 5) Zoo yenile (10 dk)
     if (!gonder && now - kayit.sonZoo > 10 * 60 * 1000) {
       gonder = 'owo zoo'; kayit.sonZoo = now;
     }
-    // Crate
+
+    // 6) Crate aç (15 dk)
     if (!gonder && now - kayit.sonCrate > 15 * 60 * 1000) {
       gonder = 'owo crate'; kayit.sonCrate = now;
     }
-    // Battle
+
+    // 7) Battle (5 dk)
     if (!gonder && now - kayit.sonBattle > 5 * 60 * 1000) {
       gonder = 'owo battle'; kayit.sonBattle = now;
     }
-    // CF
+
+    // 8) CF (5 dk)
     if (!gonder && CF_AKTIF && now - kayit.cfSon >= CF_INTERVAL) {
       if (now >= kayit.cfMola && kayit.bakiye >= CF_MIN_BAKIYE) {
         let b = Math.floor(kayit.bakiye * CF_BAHIS_ORANI);
@@ -293,11 +352,13 @@ async function kasDongusu(client, kanal, kayit) {
         kayit.cfSon = now;
       }
     }
-    // Hunt
+
+    // 9) Hunt / battle / pray
     if (!gonder && now - kayit.sonHunt >= kayit.cooldown * 1000) {
       gonder = ANA_KOMUTLAR[Math.floor(Math.random() * ANA_KOMUTLAR.length)];
       kayit.sonHunt = now;
     }
+
     if (!gonder) { await sleep(1000); continue; }
 
     try {
@@ -318,7 +379,7 @@ async function kasDongusu(client, kanal, kayit) {
 }
 
 // -------------------------------------------------------------------
-// ANA BOT (slash komutlar)
+// ANA BOT
 // -------------------------------------------------------------------
 const bot = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -346,7 +407,6 @@ bot.once('ready', async () => {
   try {
     const rest = new REST({ version: '10' }).setToken(ANA_TOKEN);
     const veri = komutlar.map(k => k.toJSON());
-
     if (GUILD_ID) {
       const sonuc = await rest.put(
         Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
@@ -358,7 +418,7 @@ bot.once('ready', async () => {
         Routes.applicationCommands(CLIENT_ID),
         { body: veri }
       );
-      console.log(`[ANA BOT] ${sonuc.length} GLOBAL komut kaydedildi (yayılması 1 saat sürebilir)`);
+      console.log(`[ANA BOT] ${sonuc.length} GLOBAL komut kaydedildi (1 saat sürebilir)`);
     }
   } catch (e) {
     console.log(`[SLASH HATA] ${e.message}`);
@@ -375,15 +435,12 @@ bot.on('interactionCreate', async (interaction) => {
       await interaction.deferReply({ ephemeral: true });
       const token = interaction.options.getString('token');
       const kanal = interaction.options.getChannel('kanal');
-
-      if (hesaplar.has(token)) {
-        return interaction.editReply('⚠️ Bu token zaten aktif. Önce `/remove` ile kaldır.');
-      }
-
+      if (hesaplar.has(token)) return interaction.editReply('⚠️ Bu token zaten aktif.');
       try {
         await selfBotBaslat(token, kanal.id, interaction.user.id);
         await interaction.editReply(
-          `✅ Hesap başlatıldı!\n**Kanal:** ${kanal}\n**Cooldown:** ${BASLANGIC_COOLDOWN}s (maks ${MAX_COOLDOWN}s)`
+          `✅ Hesap başlatıldı!\n**Kanal:** ${kanal}\n**Cooldown:** ${BASLANGIC_COOLDOWN}s (maks ${MAX_COOLDOWN}s)\n\n` +
+          `Bot `owo zoo` + `owo inv` çekecek, en iyi 3 hayvanı takıma ekleyip en iyi silahı kuşandıracak.`
         );
       } catch (e) {
         await interaction.editReply(`❌ Hata: ${e.message}`);
@@ -414,7 +471,8 @@ bot.on('interactionCreate', async (interaction) => {
             `**Bakiye:** ${k.bakiye.toLocaleString()}\n` +
             `**Kazanç/Kayıp:** +${k.kazanc} / -${k.kayip}\n` +
             `**Kanal:** <#${k.kanalId}>\n` +
-            `**Hayvan:** ${k.hayvanlar.length} | **Takım:** ${k.enIyiTakim.map(h=>h.isim).join(', ') || '-'}`,
+            `**Hayvan:** ${k.hayvanlar.length} | **Takım:** ${k.enIyiTakim.map(h=>h.isim).join(', ') || '-'}\n` +
+            `**Silah:** ${k.silahilar.length} | **Kuşanılan:** ${k.equipEdildi ? (k.silahilar[0]?.isim || '-') : 'bekliyor'}`,
           inline: false
         });
         i++;
