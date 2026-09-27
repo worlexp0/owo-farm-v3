@@ -1,13 +1,17 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder } = require('discord.js');
+// ===================================================================
+// OWO FARM BOTU — Ana Discord botu + self-bot yöneticisi
+// ===================================================================
+const {
+  Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, EmbedBuilder
+} = require('discord.js');
 const SelfClient = require('discord.js-selfbot-v13').Client;
 
 // -------------------------------------------------------------------
-// AYARLAR
+// ORTAM DEĞİŞKENLERİ
 // -------------------------------------------------------------------
-const ANA_TOKEN = process.env.ANA_BOT_TOKEN;   // Ana Discord botunun token'ı (ZORUNLU)
-const CLIENT_ID = process.env.CLIENT_ID;       // Bot application ID (ZORUNLU)
-const GUILD_ID  = process.env.GUILD_ID;        // Slash komutların kayıt olacağı sunucu ID (opsiyonel)
-
+const ANA_TOKEN  = process.env.ANA_BOT_TOKEN;
+const CLIENT_ID  = process.env.CLIENT_ID;
+const GUILD_ID   = process.env.GUILD_ID;
 const OWO_BOT_ID = process.env.OWO_BOT_ID || '408785106942164992';
 
 const BASLANGIC_COOLDOWN = parseInt(process.env.BASLANGIC_COOLDOWN || '15', 10);
@@ -21,6 +25,29 @@ const CF_MIN_BAHIS   = parseInt(process.env.CF_MIN_BAHIS   || '10',  10);
 const CF_MAX_BAHIS   = parseInt(process.env.CF_MAX_BAHIS   || '100', 10);
 const CF_INTERVAL    = parseInt(process.env.CF_INTERVAL    || '300000', 10);
 
+// -------------------------------------------------------------------
+// HATA YAKALAYICI — EN BAŞTA OLMALI
+// -------------------------------------------------------------------
+process.on('unhandledRejection', (e) => {
+  console.log('=== UNHANDLED REJECTION ===');
+  console.log(e && e.message ? e.message : e);
+  if (e && e.stack) console.log(e.stack);
+});
+process.on('uncaughtException', (e) => {
+  console.log('=== UNCAUGHT EXCEPTION ===');
+  console.log(e && e.message ? e.message : e);
+  if (e && e.stack) console.log(e.stack);
+});
+
+console.log('=== BAŞLATILIYOR ===');
+console.log('ANA_BOT_TOKEN:', ANA_TOKEN ? (ANA_TOKEN.slice(0, 10) + '...') : 'YOK');
+console.log('CLIENT_ID:', CLIENT_ID || 'YOK');
+console.log('GUILD_ID:', GUILD_ID || 'YOK');
+console.log('OWO_BOT_ID:', OWO_BOT_ID);
+
+// -------------------------------------------------------------------
+// SABİTLER
+// -------------------------------------------------------------------
 const NADIRLIK = {
   'common': 1, 'uncommon': 2, 'rare': 3, 'epic': 4,
   'mythic': 5, 'legendary': 6, 'fabled': 7, 'hidden': 8
@@ -75,15 +102,15 @@ async function selfBotBaslat(token, kanalId, ownerId) {
     const kanal = await client.channels.fetch(kanalId).catch(() => null);
     if (!kanal) {
       kayit.durum = 'kanal yok';
-      console.log(`[SELF] ${kayit.user} kanal bulunamadı`);
+      console.log(`[SELF] ${kayit.user} kanal bulunamadı: ${kanalId}`);
       return;
     }
     console.log(`[SELF] ${kayit.user} → #${kanal.name}`);
 
     await sleep(3000);
-    await kanal.send('owo zoo');
+    try { await kanal.send('owo zoo'); } catch (e) {}
     await sleep(2500);
-    await kanal.send('owo inv');
+    try { await kanal.send('owo inv'); } catch (e) {}
     await sleep(2500);
 
     kasDongusu(client, kanal, kayit);
@@ -92,11 +119,11 @@ async function selfBotBaslat(token, kanalId, ownerId) {
   // MESAJ DİNLE
   client.on('messageCreate', async (message) => {
     if (message.author.id !== OWO_BOT_ID) return;
-    const icerik = message.content;
+    const icerik = message.content || '';
     const kucuk = icerik.toLowerCase();
     const now = Date.now();
 
-    // Buton tıklama
+    // Otomatik buton tıklama
     try {
       if (message.components && message.components.length > 0) {
         for (const row of message.components) {
@@ -142,7 +169,10 @@ async function selfBotBaslat(token, kanalId, ownerId) {
         let sn = brm.includes('hour') ? adet * 3600 : brm.includes('min') ? adet * 60 : adet;
         kayit.muteUntil = now + sn * 1000;
         console.log(`[MUTE/${kayit.user}] ${sn}s`);
-      } else { kayit.muteUntil = now + 300 * 1000; }
+      } else {
+        kayit.muteUntil = now + 300 * 1000;
+        console.log(`[MUTE/${kayit.user}] 300s`);
+      }
     }
 
     if (kucuk.includes("you can't use") || kucuk.includes('slow down')) {
@@ -170,7 +200,10 @@ async function selfBotBaslat(token, kanalId, ownerId) {
       const k = parseInt(lostM[1].replace(/,/g, ''), 10);
       kayit.bakiye -= k; kayit.kayip += k; kayit.cfSeri++;
       console.log(`[🔴 CF-/${kayit.user}] -${k}`);
-      if (kayit.cfSeri >= 3) { kayit.cfMola = now + 30 * 60 * 1000; kayit.cfSeri = 0; }
+      if (kayit.cfSeri >= 3) {
+        kayit.cfMola = now + 30 * 60 * 1000;
+        kayit.cfSeri = 0;
+      }
     }
 
     // Satış
@@ -178,7 +211,7 @@ async function selfBotBaslat(token, kanalId, ownerId) {
     if (sellM) {
       const t = parseInt(sellM[2].replace(/,/g, ''), 10);
       kayit.bakiye += t;
-      console.log(`[💵 ${kayit.user}] ${sellM[1]} satıldı +${t}`);
+      console.log(`[💵 ${kayit.user}] ${sellM[1]} hayvan satıldı +${t}`);
     }
 
     // Zoo parse
@@ -218,12 +251,13 @@ async function kasDongusu(client, kanal, kayit) {
 
     let gonder = null;
 
+    // Takım kur
     if (!kayit.takimKuruldu && kayit.enIyiTakim.length >= 3) {
       for (const h of kayit.enIyiTakim) {
         try {
           await kanal.send(`owo team add ${h.isim}`);
-          console.log(`[${kayit.user}] team add ${h.isim}`);
-        } catch (e) {}
+          console.log(`[${kayit.user}] → owo team add ${h.isim}`);
+        } catch (e) { console.log(`[TAKIM HATA] ${e.message}`); }
         await sleep(2500);
       }
       kayit.takimKuruldu = true;
@@ -231,12 +265,24 @@ async function kasDongusu(client, kanal, kayit) {
       continue;
     }
 
+    // Özel komutlar
     for (const k of kayit.ozel) {
       if (now - k.son >= k.interval) { gonder = k.cmd; k.son = now; break; }
     }
-    if (!gonder && now - kayit.sonZoo > 10*60*1000) { gonder = 'owo zoo'; kayit.sonZoo = now; }
-    if (!gonder && now - kayit.sonCrate > 15*60*1000) { gonder = 'owo crate'; kayit.sonCrate = now; }
-    if (!gonder && now - kayit.sonBattle > 5*60*1000) { gonder = 'owo battle'; kayit.sonBattle = now; }
+
+    // Zoo yenile
+    if (!gonder && now - kayit.sonZoo > 10 * 60 * 1000) {
+      gonder = 'owo zoo'; kayit.sonZoo = now;
+    }
+    // Crate
+    if (!gonder && now - kayit.sonCrate > 15 * 60 * 1000) {
+      gonder = 'owo crate'; kayit.sonCrate = now;
+    }
+    // Battle
+    if (!gonder && now - kayit.sonBattle > 5 * 60 * 1000) {
+      gonder = 'owo battle'; kayit.sonBattle = now;
+    }
+    // CF
     if (!gonder && CF_AKTIF && now - kayit.cfSon >= CF_INTERVAL) {
       if (now >= kayit.cfMola && kayit.bakiye >= CF_MIN_BAKIYE) {
         let b = Math.floor(kayit.bakiye * CF_BAHIS_ORANI);
@@ -247,6 +293,7 @@ async function kasDongusu(client, kanal, kayit) {
         kayit.cfSon = now;
       }
     }
+    // Hunt
     if (!gonder && now - kayit.sonHunt >= kayit.cooldown * 1000) {
       gonder = ANA_KOMUTLAR[Math.floor(Math.random() * ANA_KOMUTLAR.length)];
       kayit.sonHunt = now;
@@ -258,7 +305,8 @@ async function kasDongusu(client, kanal, kayit) {
       console.log(`[${kayit.user}] → ${gonder} (cd=${kayit.cooldown})`);
     } catch (e) {
       console.log(`[GÖNDER HATA] ${e.message}`);
-      await sleep(5000); continue;
+      await sleep(5000);
+      continue;
     }
 
     if (kayit.cooldown < MAX_COOLDOWN) {
@@ -298,84 +346,96 @@ bot.once('ready', async () => {
   try {
     const rest = new REST({ version: '10' }).setToken(ANA_TOKEN);
     const veri = komutlar.map(k => k.toJSON());
+
     if (GUILD_ID) {
-      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: veri });
-      console.log(`[ANA BOT] ${veri.length} komut ${GUILD_ID} sunucusuna kaydedildi`);
+      const sonuc = await rest.put(
+        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+        { body: veri }
+      );
+      console.log(`[ANA BOT] ${sonuc.length} komut ${GUILD_ID} sunucusuna kaydedildi`);
     } else {
-      await rest.put(Routes.applicationCommands(CLIENT_ID), { body: veri });
-      console.log(`[ANA BOT] ${veri.length} global komut kaydedildi`);
+      const sonuc = await rest.put(
+        Routes.applicationCommands(CLIENT_ID),
+        { body: veri }
+      );
+      console.log(`[ANA BOT] ${sonuc.length} GLOBAL komut kaydedildi (yayılması 1 saat sürebilir)`);
     }
-  } catch (e) { console.log(`[SLASH HATA] ${e.message}`); }
+  } catch (e) {
+    console.log(`[SLASH HATA] ${e.message}`);
+    if (e.rawError) console.log('Detay:', JSON.stringify(e.rawError, null, 2));
+  }
 });
 
 bot.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   const { commandName } = interaction;
 
-  // /add
-  if (commandName === 'add') {
-    await interaction.deferReply({ ephemeral: true });
-    const token = interaction.options.getString('token');
-    const kanal = interaction.options.getChannel('kanal');
+  try {
+    if (commandName === 'add') {
+      await interaction.deferReply({ ephemeral: true });
+      const token = interaction.options.getString('token');
+      const kanal = interaction.options.getChannel('kanal');
 
-    if (hesaplar.has(token)) {
-      return interaction.editReply('⚠️ Bu token zaten aktif. Önce `/remove` ile kaldır.');
+      if (hesaplar.has(token)) {
+        return interaction.editReply('⚠️ Bu token zaten aktif. Önce `/remove` ile kaldır.');
+      }
+
+      try {
+        await selfBotBaslat(token, kanal.id, interaction.user.id);
+        await interaction.editReply(
+          `✅ Hesap başlatıldı!\n**Kanal:** ${kanal}\n**Cooldown:** ${BASLANGIC_COOLDOWN}s (maks ${MAX_COOLDOWN}s)`
+        );
+      } catch (e) {
+        await interaction.editReply(`❌ Hata: ${e.message}`);
+      }
     }
 
-    try {
-      await selfBotBaslat(token, kanal.id, interaction.user.id);
-      await interaction.editReply(
-        `✅ Hesap başlatıldı!\n**Kanal:** ${kanal}\n**Cooldown:** ${BASLANGIC_COOLDOWN}s (maks ${MAX_COOLDOWN}s)\n\n` +
-        `Birkaç saniye içinde loglarda giriş mesajını göreceksin.`
-      );
-    } catch (e) {
-      await interaction.editReply(`❌ Hata: ${e.message}`);
+    if (commandName === 'remove') {
+      await interaction.deferReply({ ephemeral: true });
+      const token = interaction.options.getString('token');
+      const k = hesaplar.get(token);
+      if (!k) return interaction.editReply('❌ Bu token aktif değil.');
+      try { await k.client.destroy(); } catch {}
+      hesaplar.delete(token);
+      await interaction.editReply('✅ Hesap durduruldu.');
     }
-  }
 
-  // /remove
-  if (commandName === 'remove') {
-    await interaction.deferReply({ ephemeral: true });
-    const token = interaction.options.getString('token');
-    const k = hesaplar.get(token);
-    if (!k) return interaction.editReply('❌ Bu token aktif değil.');
-    try { await k.client.destroy(); } catch {}
-    hesaplar.delete(token);
-    await interaction.editReply('✅ Hesap durduruldu.');
-  }
+    if (commandName === 'list') {
+      await interaction.deferReply({ ephemeral: true });
+      if (hesaplar.size === 0) return interaction.editReply('📭 Aktif hesap yok.');
 
-  // /list
-  if (commandName === 'list') {
-    await interaction.deferReply({ ephemeral: true });
-    if (hesaplar.size === 0) return interaction.editReply('📭 Aktif hesap yok.');
-
-    const emb = new EmbedBuilder().setTitle('🦊 Aktif Hesaplar').setColor(0x5865f2);
-    let i = 1;
-    for (const [token, k] of hesaplar.entries()) {
-      emb.addFields({
-        name: `${i}. ${k.user || 'bağlanıyor...'}`,
-        value:
-          `**Durum:** ${k.durum}\n` +
-          `**Bakiye:** ${k.bakiye.toLocaleString()}\n` +
-          `**Kazanç/Kayıp:** +${k.kazanc} / -${k.kayip}\n` +
-          `**Kanal:** <#${k.kanalId}>\n` +
-          `**Hayvan:** ${k.hayvanlar.length} | **Takım:** ${k.enIyiTakim.map(h=>h.isim).join(', ') || '-'}`,
-        inline: false
-      });
-      i++;
+      const emb = new EmbedBuilder().setTitle('🦊 Aktif Hesaplar').setColor(0x5865f2);
+      let i = 1;
+      for (const [token, k] of hesaplar.entries()) {
+        emb.addFields({
+          name: `${i}. ${k.user || 'bağlanıyor...'}`,
+          value:
+            `**Durum:** ${k.durum}\n` +
+            `**Bakiye:** ${k.bakiye.toLocaleString()}\n` +
+            `**Kazanç/Kayıp:** +${k.kazanc} / -${k.kayip}\n` +
+            `**Kanal:** <#${k.kanalId}>\n` +
+            `**Hayvan:** ${k.hayvanlar.length} | **Takım:** ${k.enIyiTakim.map(h=>h.isim).join(', ') || '-'}`,
+          inline: false
+        });
+        i++;
+      }
+      await interaction.editReply({ embeds: [emb] });
     }
-    await interaction.editReply({ embeds: [emb] });
-  }
 
-  // /resume
-  if (commandName === 'resume') {
-    await interaction.deferReply({ ephemeral: true });
-    const token = interaction.options.getString('token');
-    const k = hesaplar.get(token);
-    if (!k) return interaction.editReply('❌ Bu token aktif değil.');
-    k.durdu = false;
-    k.durum = 'çalışıyor';
-    await interaction.editReply('✅ Devam ediyor.');
+    if (commandName === 'resume') {
+      await interaction.deferReply({ ephemeral: true });
+      const token = interaction.options.getString('token');
+      const k = hesaplar.get(token);
+      if (!k) return interaction.editReply('❌ Bu token aktif değil.');
+      k.durdu = false;
+      k.durum = 'çalışıyor';
+      await interaction.editReply('✅ Devam ediyor.');
+    }
+  } catch (e) {
+    console.log(`[INTERACTION HATA] ${e.message}`);
+    if (!interaction.replied && !interaction.deferred) {
+      try { await interaction.reply({ content: 'Hata oluştu.', ephemeral: true }); } catch {}
+    }
   }
 });
 
@@ -383,8 +443,17 @@ bot.on('interactionCreate', async (interaction) => {
 // BAŞLAT
 // -------------------------------------------------------------------
 if (!ANA_TOKEN || !CLIENT_ID) {
-  console.log('❌ ANA_BOT_TOKEN veya CLIENT_ID eksik!');
+  console.log('❌ EKSİK DEĞİŞKEN!');
+  console.log('ANA_BOT_TOKEN:', ANA_TOKEN ? 'VAR' : 'YOK');
+  console.log('CLIENT_ID:', CLIENT_ID ? 'VAR' : 'YOK');
   process.exit(1);
 }
 
-bot.login(ANA_TOKEN);
+console.log('Bot başlatılıyor...');
+bot.login(ANA_TOKEN).catch(e => {
+  console.log('=== LOGIN HATA ===');
+  console.log('Mesaj:', e.message);
+  console.log('Kod:', e.code);
+  if (e.stack) console.log(e.stack);
+  process.exit(1);
+});
